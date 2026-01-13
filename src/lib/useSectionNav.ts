@@ -1,8 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { SectionId } from './sections';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import gsap from 'gsap';
+import { Observer } from 'gsap/dist/Observer';
+
 import { SECTIONS } from './sections';
+import type { SectionId } from './sections';
 
 type Direction = 1 | -1;
 
@@ -12,69 +15,47 @@ export function useSectionNav(initial: SectionId = 'intro') {
     return idx >= 0 ? idx : 0;
   }, [initial]);
 
-  const [index, setIndex] = useState<number>(initialIndex);
+  const [index, setIndex] = useState(initialIndex);
+  const locked = useRef(false);
 
-  const lockedRef = useRef(false);
-  const lock = useCallback((ms = 700) => {
-    lockedRef.current = true;
+  const go = (dir: Direction) => {
+    if (locked.current) return;
+
+    const next = index + dir;
+    if (next < 0 || next >= SECTIONS.length) return;
+
+    locked.current = true;
+    setIndex(next);
+
     window.setTimeout(() => {
-      lockedRef.current = false;
-    }, ms);
-  }, []);
-
-  const canGo = useCallback(
-    (dir: Direction) => {
-      const next = index + dir;
-      return next >= 0 && next < SECTIONS.length;
-    },
-    [index]
-  );
-
-  const go = useCallback(
-    (dir: Direction) => {
-      if (lockedRef.current) return;
-      const next = index + dir;
-      if (next < 0 || next >= SECTIONS.length) return;
-      setIndex(next);
-      lock();
-    },
-    [index, lock]
-  );
-
-  const goTo = useCallback((id: SectionId) => {
-    const next = SECTIONS.indexOf(id);
-    if (next >= 0) setIndex(next);
-  }, []);
+      locked.current = false;
+    }, 600);
+  };
 
   useEffect(() => {
-    const onWheel = (e: WheelEvent) => {
-      if (Math.abs(e.deltaY) < 10) return;
-      e.preventDefault();
-      go(e.deltaY > 0 ? 1 : -1);
-    };
+    // safety: client-only
+    if (typeof window === 'undefined') return;
 
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowDown' || e.key === 'PageDown') go(1);
-      if (e.key === 'ArrowUp' || e.key === 'PageUp') go(-1);
-    };
+    gsap.registerPlugin(Observer);
 
-    window.addEventListener('wheel', onWheel, { passive: false });
-    window.addEventListener('keydown', onKeyDown);
+    const obs = Observer.create({
+      target: window,
+      type: 'wheel,touch,pointer',
+      wheelSpeed: -1,
+      tolerance: 12,
+      preventDefault: true,
+      onDown: () => go(1),
+      onUp: () => go(-1),
+    });
 
-    return () => {
-      window.removeEventListener('wheel', onWheel);
-      window.removeEventListener('keydown', onKeyDown);
-    };
-  }, [go]);
+    return () => obs.kill();
+  }, [index]);
 
   return {
     index,
     id: SECTIONS[index],
     total: SECTIONS.length,
-    canPrev: canGo(-1),
-    canNext: canGo(1),
     prev: () => go(-1),
     next: () => go(1),
-    goTo,
   };
 }
